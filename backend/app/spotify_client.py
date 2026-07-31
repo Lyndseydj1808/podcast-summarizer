@@ -106,14 +106,20 @@ def get_queue_episodes() -> list[dict]:
     """Fetch every episode currently sitting in your 'To Summarize' playlist.
     This is our queue of 'episodes waiting to be summarized,' built from a playlist
     you add to on purpose, instead of Spotify's saved-episodes library (which turned
-    out to also fill up from downloads and followed shows, not just deliberate saves)."""
+    out to also fill up from downloads and followed shows, not just deliberate saves).
+
+    Playlist items don't reliably include the show name, so this fetches each
+    episode's full details directly from Spotify rather than trusting whatever
+    the playlist happened to embed."""
     if not config.SPOTIFY_PLAYLIST_ID:
         raise RuntimeError("SPOTIFY_PLAYLIST_ID isn't set in .env yet. Visit /playlists to find it.")
 
     access_token = get_valid_access_token()
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    episodes = []
+    # Step 1: collect the episode IDs currently in the playlist.
+    episode_ids = []
+    added_at_by_id = {}
     url = f"{API_BASE}/playlists/{config.SPOTIFY_PLAYLIST_ID}/items"
     params = {"limit": 50}
 
@@ -128,21 +134,31 @@ def get_queue_episodes() -> list[dict]:
             # by mistake) or an item Spotify can no longer resolve.
             if not item or item.get("type") != "episode":
                 continue
-
-            episodes.append(
-                {
-                    "id": item["id"],
-                    "uri": item["uri"],
-                    "name": item["name"],
-                    "description": item.get("description", ""),
-                    "show_name": (item.get("show") or {}).get("name", "Unknown show"),
-                    "duration_ms": item.get("duration_ms"),
-                    "added_at": entry.get("added_at"),
-                }
-            )
+            episode_ids.append(item["id"])
+            added_at_by_id[item["id"]] = entry.get("added_at")
 
         url = data.get("next")
         params = None  # the 'next' URL already has query params baked in
+
+    # Step 2: hydrate each episode with its full details, including the show name.
+    episodes = []
+    for episode_id in episode_ids:
+        response = httpx.get(f"{API_BASE}/episodes/{episode_id}", headers=headers)
+        response.raise_for_status()
+        ep = response.json()
+
+        show_name = (ep.get("show") or {}).get("name")  # None if genuinely unavailable
+        episodes.append(
+            {
+                "id": ep["id"],
+                "uri": ep["uri"],
+                "name": ep["name"],
+                "description": ep.get("description", ""),
+                "show_name": show_name,
+                "duration_ms": ep.get("duration_ms"),
+                "added_at": added_at_by_id.get(episode_id),
+            }
+        )
 
     return episodes
 

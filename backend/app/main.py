@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
-from . import spotify_client
+from . import rss_client, spotify_client
 
 app = FastAPI(title="Podcast Summarizer")
 
@@ -42,3 +42,62 @@ def complete_episode(episode_id: str):
     """Mark an episode as done by removing it from the 'To Summarize' playlist."""
     spotify_client.remove_from_queue(f"spotify:episode:{episode_id}")
     return {"status": "removed", "episode_id": episode_id}
+
+
+@app.get("/episodes/{episode_id}/resolve")
+def resolve_episode(episode_id: str):
+    """Given an episode from your queue, find its RSS feed and pull out the
+    audio link (and transcript link, if the feed happens to publish one)."""
+    episodes = spotify_client.get_queue_episodes()
+    episode = next((e for e in episodes if e["id"] == episode_id), None)
+    if not episode:
+        raise HTTPException(status_code=404, detail="Episode not found in your queue")
+    if not episode.get("show_name"):
+        raise HTTPException(status_code=422, detail={
+            "message": "Spotify didn't return a show name for this episode, can't search for its feed",
+            "episode_name": episode["name"],
+        })
+
+    feed_result = rss_client.find_feed_url(episode["show_name"])
+    if not feed_result:
+        raise HTTPException(status_code=404, detail={
+            "message": "No podcasts found in Apple's directory matching this show name",
+            "show_name": episode["show_name"],
+        })
+    if not feed_result["confident"]:
+        raise HTTPException(status_code=404, detail={
+            "message": "Couldn't confidently find this show's RSS feed",
+            "show_name_searched": episode["show_name"],
+            "closest_show_found": feed_result["matched_show_name"],
+            "confidence": feed_result["confidence"],
+            "other_candidates": feed_result["candidates"],
+        })
+
+    feed_url = feed_result["feed_url"]
+    feed_episodes = rss_client.get_feed_episodes(feed_url)
+    if not feed_episodes:
+        raise HTTPException(status_code=404, detail={
+            "message": "Found a feed, but it had no episodes in it",
+            "feed_url": feed_url,
+        })
+
+    match = rss_client.match_episode(episode, feed_episodes)
+    if not match["confident"]:
+        raise HTTPException(status_code=404, detail={
+            "message": "Couldn't confidently match this episode in the RSS feed",
+            "spotify_episode_name": episode["name"],
+            "feed_url": feed_url,
+            "feed_episode_count": len(feed_episodes),
+            "closest_title_found": match["title"],
+            "confidence": match["match_confidence"],
+        })
+
+    return {
+        "episode_name": episode["name"],
+        "show_name": episode["show_name"],
+        "feed_url": feed_url,
+        "matched_title": match["title"],
+        "match_confidence": match["match_confidence"],
+        "audio_url": match["audio_url"],
+        "transcript_url": match["transcript_url"],
+    }
