@@ -16,7 +16,7 @@ listing them on a resume.
 - [x] Spotify OAuth integration
 - [x] Playlist-based episode queue (episodes added to a "To Summarize" playlist get
       picked up automatically; removing one marks it as processed)
-- [ ] RSS feed matching and audio retrieval
+- [x] RSS feed matching and audio retrieval
 - [ ] Whisper-based transcription pipeline
 - [ ] AI-generated summaries (Claude API)
 - [ ] Google Sheets storage
