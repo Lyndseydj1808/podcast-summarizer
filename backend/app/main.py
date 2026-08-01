@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
-from . import rss_client, spotify_client
+from . import rss_client, spotify_client, whisper_client
 
 app = FastAPI(title="Podcast Summarizer")
 
@@ -100,4 +100,22 @@ def resolve_episode(episode_id: str):
         "match_confidence": match["match_confidence"],
         "audio_url": match["audio_url"],
         "transcript_url": match["transcript_url"],
+    }
+
+
+@app.get("/episodes/{episode_id}/transcript")
+def get_transcript(episode_id: str):
+    """Full pipeline so far: resolve the episode to its audio (Phase 2), then
+    download and transcribe it (Phase 3). This can take a while for a long episode."""
+    resolved = resolve_episode(episode_id)
+    try:
+        transcript = whisper_client.transcribe_episode(resolved["audio_url"])
+    except whisper_client.TranscriptionError as e:
+        # 502: we tried to talk to an outside service (the audio host or OpenAI)
+        # and it failed, this wasn't a problem with the request itself.
+        raise HTTPException(status_code=502, detail=str(e))
+    return {
+        "episode_name": resolved["episode_name"],
+        "show_name": resolved["show_name"],
+        "transcript": transcript,
     }
