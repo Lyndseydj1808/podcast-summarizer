@@ -18,6 +18,8 @@ SPOTIFY_SCOPES = "playlist-read-private playlist-modify-private playlist-modify-
 # this app provides to find its ID and paste it in here.
 SPOTIFY_PLAYLIST_ID = os.getenv("SPOTIFY_PLAYLIST_ID")
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 # Temporary local file for storing your Spotify tokens between requests.
 # This is a placeholder until Phase 6, when Postgres takes over.
 TOKEN_STORE_PATH = os.path.join(
