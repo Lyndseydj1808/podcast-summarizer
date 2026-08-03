@@ -17,8 +17,8 @@ listing them on a resume.
 - [x] Playlist-based episode queue (episodes added to a "To Summarize" playlist get
       picked up automatically; removing one marks it as processed)
 - [x] RSS feed matching and audio retrieval
-- [ ] Whisper-based transcription pipeline
-- [ ] AI-generated summaries (Claude API)
+- [x] Whisper-based transcription pipeline
+- [x] AI-generated summaries (Claude API)
 - [ ] Google Sheets storage
 - [ ] Postgres-backed persistence
 - [ ] React + TypeScript frontend
