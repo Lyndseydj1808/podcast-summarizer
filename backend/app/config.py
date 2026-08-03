@@ -22,6 +22,18 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
+# Path to the Google service account's private key file, and the ID of the
+# Google Sheet (from its URL) to write summaries into. The key file lives in
+# the backend/ folder alongside .env, so we build its full path here rather
+# than relying on whatever folder the app happens to be launched from.
+GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+GOOGLE_SERVICE_ACCOUNT_PATH = (
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), GOOGLE_SERVICE_ACCOUNT_FILE)
+    if GOOGLE_SERVICE_ACCOUNT_FILE
+    else None
+)
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+
 # Temporary local file for storing your Spotify tokens between requests.
 # This is a placeholder until Phase 6, when Postgres takes over.
 TOKEN_STORE_PATH = os.path.join(

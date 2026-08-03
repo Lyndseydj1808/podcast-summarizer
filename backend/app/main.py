@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
-from . import claude_client, rss_client, spotify_client, whisper_client
+from . import claude_client, rss_client, sheets_client, spotify_client, whisper_client
 
 app = FastAPI(title="Podcast Summarizer")
 
@@ -137,4 +137,29 @@ def get_summary(episode_id: str):
         "episode_name": transcript_result["episode_name"],
         "show_name": transcript_result["show_name"],
         "summary": summary,
+    }
+
+
+@app.post("/episodes/{episode_id}/process")
+def process_episode(episode_id: str):
+    """The full pipeline: resolve (Phase 2), transcribe (Phase 3), summarize (Phase 4),
+    write to the Google Sheet (Phase 5), and mark the episode done by removing it
+    from the playlist."""
+    summary_result = get_summary(episode_id)
+
+    try:
+        sheets_client.append_summary_row(
+            show_name=summary_result["show_name"],
+            episode_name=summary_result["episode_name"],
+            summary=summary_result["summary"],
+        )
+    except sheets_client.SheetsError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    spotify_client.remove_from_queue(f"spotify:episode:{episode_id}")
+
+    return {
+        "status": "done",
+        "episode_name": summary_result["episode_name"],
+        "show_name": summary_result["show_name"],
     }

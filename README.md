@@ -19,7 +19,7 @@ listing them on a resume.
 - [x] RSS feed matching and audio retrieval
 - [x] Whisper-based transcription pipeline
 - [x] AI-generated summaries (Claude API)
-- [ ] Google Sheets storage
+- [x] Google Sheets storage
 - [ ] Postgres-backed persistence
 - [ ] React + TypeScript frontend
 - [ ] Dockerized deployment
