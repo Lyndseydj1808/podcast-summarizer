@@ -1,5 +1,6 @@
 .env
 tokens.json
+podcast-summarizer-504019-6b72949bbcab.json
 __pycache__/
 *.pyc
 venv/
