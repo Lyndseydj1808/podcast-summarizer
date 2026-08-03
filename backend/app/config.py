@@ -20,6 +20,8 @@ SPOTIFY_PLAYLIST_ID = os.getenv("SPOTIFY_PLAYLIST_ID")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
 # Temporary local file for storing your Spotify tokens between requests.
 # This is a placeholder until Phase 6, when Postgres takes over.
 TOKEN_STORE_PATH = os.path.join(

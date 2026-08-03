@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
-from . import rss_client, spotify_client, whisper_client
+from . import claude_client, rss_client, spotify_client, whisper_client
 
 app = FastAPI(title="Podcast Summarizer")
 
@@ -118,4 +118,23 @@ def get_transcript(episode_id: str):
         "episode_name": resolved["episode_name"],
         "show_name": resolved["show_name"],
         "transcript": transcript,
+    }
+
+
+@app.get("/episodes/{episode_id}/summary")
+def get_summary(episode_id: str):
+    """Full pipeline so far: resolve (Phase 2), transcribe (Phase 3), summarize (Phase 4)."""
+    transcript_result = get_transcript(episode_id)
+    try:
+        summary = claude_client.summarize_transcript(
+            transcript_result["transcript"],
+            transcript_result["episode_name"],
+            transcript_result["show_name"],
+        )
+    except claude_client.SummarizationError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {
+        "episode_name": transcript_result["episode_name"],
+        "show_name": transcript_result["show_name"],
+        "summary": summary,
     }
