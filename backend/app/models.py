@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text
 
 from .database import Base
 
@@ -29,4 +29,5 @@ class ProcessedEpisode(Base):
     spotify_episode_id = Column(String, unique=True, nullable=False)
     show_name = Column(String, nullable=True)
     episode_name = Column(String, nullable=False)
+    summary = Column(Text, nullable=True)
     processed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

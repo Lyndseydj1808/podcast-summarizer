@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -70,6 +71,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Podcast Summarizer", lifespan=lifespan)
+
+# Allow the React dev server (a different address, as far as the browser's
+# concerned) to call this API. Restricted to just that one address rather
+# than opened up to everyone.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
@@ -228,6 +239,7 @@ def process_episode(episode_id: str, db: Session = Depends(get_db)):
                 spotify_episode_id=episode_id,
                 show_name=summary_result["show_name"],
                 episode_name=summary_result["episode_name"],
+                summary=summary_result["summary"],
             )
         )
         db.commit()
@@ -258,6 +270,7 @@ def list_processed_episodes(db: Session = Depends(get_db)):
             "episode_name": r.episode_name,
             "show_name": r.show_name,
             "processed_at": r.processed_at,
+            "summary": r.summary,
         }
         for r in records
     ]
