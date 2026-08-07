@@ -5,3 +5,8 @@ python-dotenv
 feedparser
 google-auth
 requests
+sqlalchemy
+psycopg2-binary
+pydub
+audioop-lts
+apscheduler

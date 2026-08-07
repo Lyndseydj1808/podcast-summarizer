@@ -2,6 +2,7 @@ import os
 import tempfile
 
 import httpx
+from pydub import AudioSegment
 
 from . import config
 
@@ -9,6 +10,27 @@ TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
 
 # Whisper rejects any file over 25MB. We stay a little under that as a safety margin.
 MAX_CHUNK_BYTES = 24 * 1024 * 1024
+
+# When a file needs splitting, cut it into fixed-length pieces (rather than a
+# fixed byte size) and re-export each one at a modest, known bitrate. That
+# combination keeps every chunk comfortably under Whisper's limit no matter
+# how the original file was encoded.
+CHUNK_DURATION_MS = 20 * 60 * 1000  # 20 minutes
+CHUNK_EXPORT_BITRATE = "128k"
+
+# Podcast hosts don't always serve audio from a URL ending in .mp3 even when
+# the file isn't actually an MP3. We use the real Content-Type header to pick
+# the right extension, since ffmpeg leans on it to identify the format.
+CONTENT_TYPE_TO_EXTENSION = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/x-m4a": "m4a",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/ogg": "ogg",
+}
 
 
 class TranscriptionError(Exception):
@@ -21,20 +43,25 @@ def download_audio(audio_url: str) -> str:
     """Download an episode's audio to a temporary file on disk and return its path.
     Episodes can be large, so we stream to disk rather than holding the whole
     thing in memory."""
-    fd, path = tempfile.mkstemp(suffix=".mp3")
+    path = None
     try:
-        with os.fdopen(fd, "wb") as f:
-            with httpx.stream("GET", audio_url, follow_redirects=True, timeout=120.0) as response:
-                response.raise_for_status()
+        with httpx.stream("GET", audio_url, follow_redirects=True, timeout=120.0) as response:
+            response.raise_for_status()
+
+            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            extension = CONTENT_TYPE_TO_EXTENSION.get(content_type, "mp3")
+
+            fd, path = tempfile.mkstemp(suffix=f".{extension}")
+            with os.fdopen(fd, "wb") as f:
                 for data in response.iter_bytes():
                     f.write(data)
     except httpx.HTTPStatusError as e:
-        os.remove(path)
         raise TranscriptionError(
             f"The audio host returned an error ({e.response.status_code}) while downloading {audio_url}"
         ) from e
     except httpx.RequestError as e:
-        os.remove(path)
+        if path and os.path.exists(path):
+            os.remove(path)
         raise TranscriptionError(f"Couldn't reach the audio file at {audio_url}: {e}") from e
 
     return path
@@ -43,28 +70,24 @@ def download_audio(audio_url: str) -> str:
 def split_audio(file_path: str) -> list[str]:
     """Split an audio file into pieces small enough for Whisper's 25MB limit.
 
-    This is a simple byte-level split, not an audio-aware one (which would need
-    ffmpeg installed separately). That means the exact cut point can land mid-sound
-    rather than in a clean gap, occasionally garbling a fraction of a second right
-    at each seam. Whisper is built to handle real-world, imperfect audio, so this
-    tradeoff is worth it to avoid a whole extra system dependency.
+    Files under the limit are sent as-is. Larger files are decoded with ffmpeg
+    (via pydub) and cut by time rather than by raw byte position, then each
+    piece is re-exported as a clean mp3. A raw byte-level split only produces
+    valid audio for simple, frame-based formats like MP3, container formats
+    like M4A aren't playable anymore once sliced mid-file.
     """
-    size = os.path.getsize(file_path)
-    if size <= MAX_CHUNK_BYTES:
+    if os.path.getsize(file_path) <= MAX_CHUNK_BYTES:
         return [file_path]
 
+    audio = AudioSegment.from_file(file_path)
+
     chunk_paths = []
-    with open(file_path, "rb") as f:
-        index = 0
-        while True:
-            data = f.read(MAX_CHUNK_BYTES)
-            if not data:
-                break
-            chunk_path = f"{file_path}.part{index}.mp3"
-            with open(chunk_path, "wb") as chunk_file:
-                chunk_file.write(data)
-            chunk_paths.append(chunk_path)
-            index += 1
+    for index, start_ms in enumerate(range(0, len(audio), CHUNK_DURATION_MS)):
+        chunk = audio[start_ms : start_ms + CHUNK_DURATION_MS]
+        chunk_path = f"{file_path}.part{index}.mp3"
+        chunk.export(chunk_path, format="mp3", bitrate=CHUNK_EXPORT_BITRATE)
+        chunk_paths.append(chunk_path)
+
     return chunk_paths
 
 

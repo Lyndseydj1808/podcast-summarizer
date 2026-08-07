@@ -1,9 +1,75 @@
-from fastapi import FastAPI, HTTPException
+import logging
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-from . import claude_client, rss_client, sheets_client, spotify_client, whisper_client
+from . import claude_client, models, rss_client, sheets_client, spotify_client, whisper_client
+from .database import SessionLocal, get_db
 
-app = FastAPI(title="Podcast Summarizer")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+POLL_INTERVAL_MINUTES = 15
+
+# Episodes get added to the playlist deliberately, one at a time, so the queue
+# should never realistically hold more than a handful at once. If it ever
+# does, that's more likely a bug or a Spotify glitch than intentional, and
+# since Whisper/Claude cost real money per episode, auto-processing shouldn't
+# blindly plow through an abnormally large queue. Skip the run and flag it
+# for a human to check instead.
+MAX_QUEUE_SIZE_TO_AUTO_PROCESS = 10
+
+
+def _auto_process_queue() -> None:
+    """Runs on a schedule: check the 'To Summarize' playlist for anything new
+    and process it automatically, the same way the manual /process route does.
+    One episode failing (bad audio, no RSS match, etc.) shouldn't stop the
+    rest of the queue from being tried, so each one gets its own try/except."""
+    try:
+        episodes = spotify_client.get_queue_episodes()
+    except Exception as e:
+        logger.error(f"Auto-processing: couldn't fetch the playlist queue: {e}")
+        return
+
+    if len(episodes) > MAX_QUEUE_SIZE_TO_AUTO_PROCESS:
+        logger.error(
+            f"Auto-processing: playlist has {len(episodes)} episodes queued, "
+            f"more than the safety limit of {MAX_QUEUE_SIZE_TO_AUTO_PROCESS}. "
+            "Skipping this run entirely, check the playlist manually before processing."
+        )
+        return
+
+    for episode in episodes:
+        db = SessionLocal()
+        try:
+            process_episode(episode["id"], db)
+            logger.info(f"Auto-processed: {episode['name']}")
+        except HTTPException as e:
+            logger.warning(f"Skipped '{episode['name']}': {e.detail}")
+        except Exception as e:
+            logger.error(f"Unexpected error auto-processing '{episode['name']}': {e}")
+        finally:
+            db.close()
+
+
+scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Runs once when the server starts.
+    scheduler.add_job(_auto_process_queue, "interval", minutes=POLL_INTERVAL_MINUTES)
+    scheduler.start()
+    yield
+    # Runs once when the server shuts down.
+    scheduler.shutdown()
+
+
+app = FastAPI(title="Podcast Summarizer", lifespan=lifespan)
 
 
 @app.get("/")
@@ -141,10 +207,10 @@ def get_summary(episode_id: str):
 
 
 @app.post("/episodes/{episode_id}/process")
-def process_episode(episode_id: str):
+def process_episode(episode_id: str, db: Session = Depends(get_db)):
     """The full pipeline: resolve (Phase 2), transcribe (Phase 3), summarize (Phase 4),
-    write to the Google Sheet (Phase 5), and mark the episode done by removing it
-    from the playlist."""
+    write to the Google Sheet (Phase 5), record it in Postgres, and mark the episode
+    done by removing it from the playlist (Phase 6)."""
     summary_result = get_summary(episode_id)
 
     try:
@@ -156,6 +222,20 @@ def process_episode(episode_id: str):
     except sheets_client.SheetsError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+    try:
+        db.add(
+            models.ProcessedEpisode(
+                spotify_episode_id=episode_id,
+                show_name=summary_result["show_name"],
+                episode_name=summary_result["episode_name"],
+            )
+        )
+        db.commit()
+    except IntegrityError:
+        # spotify_episode_id is unique, this fires if we've already recorded this one.
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This episode was already processed")
+
     spotify_client.remove_from_queue(f"spotify:episode:{episode_id}")
 
     return {
@@ -163,3 +243,21 @@ def process_episode(episode_id: str):
         "episode_name": summary_result["episode_name"],
         "show_name": summary_result["show_name"],
     }
+
+
+@app.get("/episodes/processed")
+def list_processed_episodes(db: Session = Depends(get_db)):
+    """Your processing history, pulled straight from Postgres, most recent first."""
+    records = (
+        db.query(models.ProcessedEpisode)
+        .order_by(models.ProcessedEpisode.processed_at.desc())
+        .all()
+    )
+    return [
+        {
+            "episode_name": r.episode_name,
+            "show_name": r.show_name,
+            "processed_at": r.processed_at,
+        }
+        for r in records
+    ]
