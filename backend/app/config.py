@@ -34,8 +34,5 @@ GOOGLE_SERVICE_ACCOUNT_PATH = (
 )
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
-# Temporary local file for storing your Spotify tokens between requests.
-# This is a placeholder until Phase 6, when Postgres takes over.
-TOKEN_STORE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tokens.json"
-)
+# Connection string for the Postgres database (see backend/app/database.py).
+DATABASE_URL = os.getenv("DATABASE_URL")

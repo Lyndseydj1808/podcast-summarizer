@@ -1,12 +1,12 @@
 import base64
-import json
-import os
 import time
 from urllib.parse import urlencode
 
 import httpx
 
 from . import config
+from .database import SessionLocal
+from .models import SpotifyToken
 
 AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -65,15 +65,37 @@ def refresh_access_token(refresh_token: str) -> dict:
 
 
 def _save_tokens(tokens: dict) -> None:
-    with open(config.TOKEN_STORE_PATH, "w") as f:
-        json.dump(tokens, f)
+    """Update the one-and-only tokens row, creating it the first time."""
+    db = SessionLocal()
+    try:
+        record = db.query(SpotifyToken).first()
+        if record is None:
+            record = SpotifyToken()
+            db.add(record)
+
+        record.access_token = tokens["access_token"]
+        record.refresh_token = tokens["refresh_token"]
+        record.expires_in = tokens.get("expires_in", 3600)
+        record.obtained_at = tokens["obtained_at"]
+        db.commit()
+    finally:
+        db.close()
 
 
 def _load_tokens() -> dict | None:
-    if not os.path.exists(config.TOKEN_STORE_PATH):
-        return None
-    with open(config.TOKEN_STORE_PATH) as f:
-        return json.load(f)
+    db = SessionLocal()
+    try:
+        record = db.query(SpotifyToken).first()
+        if record is None:
+            return None
+        return {
+            "access_token": record.access_token,
+            "refresh_token": record.refresh_token,
+            "expires_in": record.expires_in,
+            "obtained_at": record.obtained_at,
+        }
+    finally:
+        db.close()
 
 
 def get_valid_access_token() -> str:
