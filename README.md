@@ -5,7 +5,12 @@ queued up to listen to, and logs the summaries to a Google Sheet.
 
 ## Why I'm building this
 
-I'm a career-changer learning software development through LaunchCode. This project
+I listen to a lot of podcasts while multitasking, which means I don't always retain
+every detail. This app gives me a quick way to review what I actually listened to
+afterward, it helps with retention, and gives me a fast place to look back for a
+specific reference without having to re-listen to the whole episode.
+
+I'm also a career-changer learning software development through LaunchCode. This project
 is deliberately built with Python, FastAPI, PostgreSQL, React, TypeScript, and Docker,
 a stack chosen to match the technologies used at companies I'm targeting in my job
 search, so I can show real, working familiarity with these tools rather than just
@@ -27,7 +32,7 @@ alongside me.
 - [x] Postgres-backed persistence (tokens + a permanent processed-episodes record)
 - [x] Automatic playlist polling (checks every 15 minutes, no manual trigger needed)
 - [x] React + TypeScript frontend (dashboard + a full summaries archive)
-- [ ] Dockerized deployment
+- [x] Dockerized backend + Postgres (one-command local setup via Docker Compose)
 
 ## How it works
 
@@ -55,9 +60,33 @@ alongside me.
 - **Summarization:** Anthropic Claude API
 - **Storage:** Google Sheets API + Postgres (full summary archive)
 - **Scheduling:** APScheduler (background playlist polling)
-- **Deployment:** Docker (planned)
+- **Deployment:** Docker, Docker Compose
 
 ## Local setup
+
+### Option A: Docker (backend + Postgres)
+
+Requires Docker installed and running.
+
+```
+cd backend
+cp .env.example .env   # then fill in your own API credentials + DATABASE_URL
+# also add POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB, matching the
+# pieces of DATABASE_URL, Compose uses these to set up its own Postgres
+cd ..
+docker compose --env-file backend/.env up --build
+```
+
+First run only, create the database tables inside the container:
+
+```
+docker compose exec backend python -c "from app.database import engine, Base; from app import models; Base.metadata.create_all(engine)"
+```
+
+Visit `http://localhost:8000/login` to connect a Spotify account, then
+`http://localhost:8000/playlists` to find the ID of your "To Summarize" playlist.
+
+### Option B: Fully local (no Docker)
 
 Requires PostgreSQL and ffmpeg installed locally (used for audio chunking).
 
@@ -72,7 +101,7 @@ cp .env.example .env           # then fill in your own API credentials + DATABAS
 uvicorn app.main:app --reload --port 8000
 ```
 
-Frontend (in a separate terminal):
+Frontend (in a separate terminal, either option):
 
 ```
 cd frontend
