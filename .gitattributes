@@ -1,0 +1,3 @@
+# Normalize all text files to LF line endings in the repo,
+# regardless of what OS someone edits them on.
+* text=auto eol=lf
