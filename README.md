@@ -26,7 +26,7 @@ alongside me.
 - [x] Google Sheets storage
 - [x] Postgres-backed persistence (tokens + a permanent processed-episodes record)
 - [x] Automatic playlist polling (checks every 15 minutes, no manual trigger needed)
-- [ ] React + TypeScript frontend
+- [x] React + TypeScript frontend (dashboard + a full summaries archive)
 - [ ] Dockerized deployment
 
 ## How it works
@@ -39,23 +39,29 @@ alongside me.
 4. The audio is transcribed via the Whisper API (chunked and re-encoded with
    ffmpeg for episodes too large for a single request).
 5. The transcript is summarized using Claude.
-6. The summary is written to a Google Sheet, a permanent record is saved to
-   Postgres, and the episode is removed from the playlist to mark it as done.
+6. The summary is written to a Google Sheet, a permanent record (including the
+   full summary text) is saved to Postgres, and the episode is removed from
+   the playlist to mark it as done.
+7. A React dashboard shows the current queue and lets me trigger a manual
+   process or reconnect Spotify; a separate Summaries page is a full,
+   browsable archive of every summary saved so far.
 
 ## Tech stack
 
 - **Backend:** Python, FastAPI
 - **Database:** PostgreSQL, SQLAlchemy
-- **Frontend:** React, TypeScript (planned)
+- **Frontend:** React, TypeScript, React Router, Vite
 - **Transcription:** OpenAI Whisper API
 - **Summarization:** Anthropic Claude API
-- **Storage:** Google Sheets API
+- **Storage:** Google Sheets API + Postgres (full summary archive)
 - **Scheduling:** APScheduler (background playlist polling)
 - **Deployment:** Docker (planned)
 
 ## Local setup
 
 Requires PostgreSQL and ffmpeg installed locally (used for audio chunking).
+
+Backend:
 
 ```
 cd backend
@@ -66,5 +72,14 @@ cp .env.example .env           # then fill in your own API credentials + DATABAS
 uvicorn app.main:app --reload --port 8000
 ```
 
-Visit `http://127.0.0.1:8000/login` to connect a Spotify account, then
+Frontend (in a separate terminal):
+
+```
+cd frontend
+npm install
+npm run dev
+```
+
+Visit `http://localhost:5173` for the dashboard. The first time, use its "Connect Spotify"
+button (or `http://127.0.0.1:8000/login` directly) to link a Spotify account, then
 `http://127.0.0.1:8000/playlists` to find the ID of your "To Summarize" playlist.
