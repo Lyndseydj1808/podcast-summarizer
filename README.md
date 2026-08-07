@@ -11,6 +11,10 @@ a stack chosen to match the technologies used at companies I'm targeting in my j
 search, so I can show real, working familiarity with these tools rather than just
 listing them on a resume.
 
+I'm also using this project to experiment with AI-assisted development as part of my
+AI Engineering coursework, using Claude to help design and build the application
+alongside me.
+
 ## Status: actively in development
 
 - [x] Spotify OAuth integration
